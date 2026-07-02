@@ -1,0 +1,47 @@
+{
+  "name": "@dignetwork/chia-provider",
+  "version": "0.1.0",
+  "description": "Canonical DIG window.chia wallet provider — a Goby/CHIP-0002/Sage-WC2-compatible injected provider surface, transport-injected, shared by the DIG Browser (in-process native bridge) and the dig-chrome-extension (WalletConnect→Sage). One contract, two consumers.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DIG-Network/chia-provider.git"
+  },
+  "homepage": "https://github.com/DIG-Network/chia-provider",
+  "main": "src/index.mjs",
+  "types": "types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./src/index.mjs"
+    },
+    "./provider": "./src/provider.mjs",
+    "./methods": "./src/methods.mjs"
+  },
+  "files": [
+    "src/",
+    "types/",
+    "README.md",
+    "SPEC.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/",
+    "coverage": "c8 --check-coverage --lines 80 --functions 80 --branches 70 --reporter text --reporter lcov node --test tests/"
+  },
+  "devDependencies": {
+    "c8": "^10.1.2"
+  },
+  "keywords": [
+    "chia",
+    "window.chia",
+    "goby",
+    "chip-0002",
+    "wallet",
+    "provider",
+    "dig-network"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
