@@ -1,0 +1,41 @@
+name: publish-npm
+
+# Publish @dignetwork/chia-provider to npmjs. Auth uses the org-level NPM_TOKEN secret (must be
+# granted to this repo in the org secret's repository-access list) — the SAME pattern as
+# dig-sdk / chip35_dl_coin publish-npm.yml. Runs when a GitHub Release is published (tag-driven),
+# or on manual dispatch. The version published is whatever is in package.json on the released
+# commit — bump it before tagging.
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+# Serialize publishes; never cancel an in-flight one.
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: test + npm publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: "https://registry.npmjs.org"
+      - run: npm ci
+      # Gate the publish on green tests + the ≥80% coverage floor (CLAUDE.md §2.3).
+      - run: npm test
+      - run: npm run coverage
+      - name: publish to npmjs
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
