@@ -6,6 +6,8 @@ name: publish-npm
 # or on manual dispatch. The version published is whatever is in package.json on the released
 # commit — bump it before tagging.
 on:
+  push:
+    tags: ['v*']
   release:
     types: [published]
   workflow_dispatch: {}
