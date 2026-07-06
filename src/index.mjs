@@ -3,9 +3,9 @@
  *
  * This package is the SINGLE SOURCE OF TRUTH for the injected provider surface a dApp
  * sees as `window.chia`, shared by the DIG Browser (native in-process bridge) and the
- * dig-chrome-extension (WalletConnect→Sage). It is transport-agnostic: `buildProvider`
- * takes a `bridgeCall(method, params) → {status, body}` and returns the provider object;
- * each consumer supplies its own transport.
+ * dig-chrome-extension (its own self-custody wallet — no WalletConnect). It is
+ * transport-agnostic: `buildProvider` takes a `bridgeCall(method, params) → {status, body}`
+ * and returns the provider object; each consumer supplies its own transport.
  *
  * The surface is a SUPERSET compatible with:
  *   - CHIP-0002 (the Chia wallet standard) — request({method, params})

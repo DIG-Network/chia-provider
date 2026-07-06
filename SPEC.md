@@ -16,7 +16,7 @@ in-process provider and the dig-chrome-extension IIFE) MUST expose this exact su
 | `name` | `string` | The wallet display name (`"DIG"`). |
 | `version` | `string` | The consumer build version (extension manifest / browser build). `"unknown"` if unavailable. |
 | `apiVersion` | `string` | The provider-contract API version (`"1.0.0"` for this surface). |
-| `info` | object | `{ isDIG:true, transport, edition, providerVersion, scheme?, version? }` — self-describing capability object. `transport` ∈ {`walletconnect`, `native`}; `edition` ∈ {`extension`, `browser`}. |
+| `info` | object | `{ isDIG:true, transport, edition, providerVersion, scheme?, version? }` — self-describing capability object. `transport` ∈ {`injected`, `native`} (the extension serves via its self-custody vault — no WalletConnect); `edition` ∈ {`extension`, `browser`}. |
 | `methods` | `string[]` | The broker method catalogue (fully-namespaced `chip0002_*`/`chia_*`). |
 | `errorCodes` | object | The thrown-error code enum (§4). |
 
@@ -28,7 +28,7 @@ object. `bridgeCall(method, params, timeoutMs?)` MUST resolve to an envelope
 
 `rpc(method, params)` semantics over the envelope:
 - **`status === 200`** → resolve `body.data`.
-- **`status === 202`** → THROW a pending error (`code = 4001`, `pending = true`). This is the
+- **`status === 202`** → THROW a pending error (`code = 4002`, `pending = true`). This is the
   approval-pending signal `connect()` polls on. A 202 MUST NOT resolve as success.
 - **any other status, or a nullish envelope** → THROW per §4 mapping.
 
@@ -57,15 +57,18 @@ for the same name (dApps built against Goby call these on the object directly):
 `requestAccounts`, `accounts`.
 
 ### 3.3 Special handlers
-- **`connect(eager?)`** — dispatches `chip0002_connect{ eager }`; on a 202 pending it polls
-  (≤120 s deadline, ~1.2 s backoff) until approval/rejection/timeout; on success sets the
-  connected state, sets `chainId = "mainnet"`, and fires the `connect` event.
+- **`connect({ eager?, scope? })`** — accepts the options object `{ eager?:boolean,
+  scope?:"full"|"read-only" }` (or a bare boolean `eager` from legacy callers) and dispatches
+  `chip0002_connect{ eager, scope? }`; on a 202 pending it polls (≤120 s deadline, ~1.2 s backoff)
+  until approval/rejection/timeout; on success sets the connected state, sets `chainId = "mainnet"`,
+  caches the returned address, fires `connect` (carrying the raw result) + `accountChanged`, and
+  **RESOLVES `true`** (the CHIP-0002/Goby boolean contract).
 - **`requestAccounts()`** — `connect()` (prompts if not connected), then resolves to the address
   list (`[selectedAddress]`), caching `selectedAddress`.
 - **`accounts()`** — if not connected, rejects with `4900`; otherwise resolves the address list
   without prompting.
 - **`walletSwitchChain({ chainId })`** — answered locally: `"mainnet"` (or absent) resolves `null`;
-  any other chain rejects with `4200` (DIG is Chia mainnet only). MUST NOT hit the broker.
+  any other chain rejects with `4004` (DIG is Chia mainnet only). MUST NOT hit the broker.
 
 ### 3.4 Accessors & connection state
 - `isConnected()` is a **callable** returning a boolean (Goby convention), NOT a boolean property.
@@ -80,15 +83,21 @@ isolated (MUST NOT break dispatch or reject the triggering call).
 
 ## 4. Error codes (thrown `Error.code`)
 
-EIP-1193 / CHIP-0002 aligned. The `mapEnvelopeToError(env)` mapping is normative:
+The **CHIP-0002** error-code set (so a CHIP-0002/Goby dApp branches on `err.code` identically), plus
+`4900` (disconnected/not-connected, the Goby convention `accounts()` uses). The full enum is
+`INVALID_PARAMS 4000 · UNAUTHORIZED 4001 · USER_REJECTED 4002 · SPENDABLE_BALANCE_EXCEEDED 4003 ·
+METHOD_NOT_FOUND 4004 · NO_SECRET_KEY 4005 · LIMIT_EXCEEDED 4029 · DISCONNECTED 4900`. The
+`mapEnvelopeToError(env)` transport-status mapping is normative:
 
 | Condition | `code` | Name |
 |---|---|---|
 | nullish envelope / `status ≥ 500` / `status === 0` | `4900` | `DISCONNECTED` |
-| `status === 202` | `4001` (`pending=true`) | `USER_REJECTED` (pending) |
-| `status === 401` / `403` | `4100` | `UNAUTHORIZED` |
-| `status === 404` | `4200` | `UNSUPPORTED_METHOD` |
-| any other non-2xx | `4001` | `USER_REJECTED` |
+| `status === 202` | `4002` (`pending=true`) | `USER_REJECTED` (pending) |
+| `status === 400` | `4000` | `INVALID_PARAMS` |
+| `status === 401` / `403` | `4001` | `UNAUTHORIZED` |
+| `status === 404` | `4004` | `METHOD_NOT_FOUND` |
+| `status === 429` | `4029` | `LIMIT_EXCEEDED` |
+| any other non-2xx | `4002` | `USER_REJECTED` |
 
 Thrown errors carry `code`, `message`, and (when derived from a transport status) `status`.
 

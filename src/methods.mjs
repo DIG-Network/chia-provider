@@ -4,8 +4,8 @@
  * This mirrors the native DIG Browser's dig-wallet method set (SYSTEM.md →
  * "dig-wallet dapp/WC method surface") so a dapp gets the SAME `window.chia` whether
  * the user is on the native DIG Browser or on Chrome/Edge/Brave/Firefox with this
- * extension. The extension can't run an in-process wallet, so these are brokered over
- * WalletConnect to Sage — but the method names + namespacing a dapp sees are identical.
+ * extension. In the extension each method is served by the built-in self-custody wallet
+ * (the offscreen key vault); the method names + namespacing a dapp sees are identical.
  *
  * Namespacing rules (also enforced in dig-provider.js):
  *   - `chip0002_*` and `chia_*` methods pass through as-is.
@@ -75,9 +75,9 @@ export const STATE_CHANGING_METHODS = new Set([
  * method names that do NOT map 1:1 to `chip0002_<name>` — Goby's `transfer` is
  * Sage's `chia_send`; `createOffer`/`takeOffer`/`cancelOffer`/`getNFTs` live in the
  * `chia_*` namespace, not `chip0002_*`. This table routes each dApp-facing name to
- * the DIG broker method that actually serves it, so the same `window.chia` a Goby
- * dApp expects (see the loroco goby-provider surface) works against DIG's Sage
- * broker. Names NOT listed here fall back to `chip0002_<name>` namespacing.
+ * the DIG wallet method that actually serves it, so the same `window.chia` a Goby
+ * dApp expects (see Reference Wallet B's provider surface) works against DIG's wallet.
+ * Names NOT listed here fall back to `chip0002_<name>` namespacing.
  *
  * Kept byte-aligned with the two injected providers (dig-provider.js IIFE and the
  * native DIG Browser dig_provider.js) — SYSTEM.md → keep the providers in sync.
