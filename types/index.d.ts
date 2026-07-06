@@ -8,15 +8,23 @@ export type ChainId = 'mainnet' | 'testnet11' | (string & {});
 export type Hex = `0x${string}` | string;
 export type Amount = number | string;
 
-/** Standard wallet provider error codes (EIP-1193 / CHIP-0002 aligned). */
+/** CHIP-0002 wallet provider error codes (+ 4900 disconnected, Goby convention). */
 export interface ProviderErrorCodes {
-  /** 4001 — the user rejected the request (or a connect is still pending approval). */
-  USER_REJECTED: 4001;
-  /** 4100 — the origin/account is not authorized (call connect() first). */
-  UNAUTHORIZED: 4100;
-  /** 4200 — the wallet does not support the requested method (or chain). */
-  UNSUPPORTED_METHOD: 4200;
-  /** 4900 — the wallet is disconnected / unreachable. */
+  /** 4000 — invalid method params. */
+  INVALID_PARAMS: 4000;
+  /** 4001 — the origin/account is not authorized (call connect() first). */
+  UNAUTHORIZED: 4001;
+  /** 4002 — the user rejected the request (or a connect approval timed out). */
+  USER_REJECTED: 4002;
+  /** 4003 — the requested spend exceeds the spendable balance. */
+  SPENDABLE_BALANCE_EXCEEDED: 4003;
+  /** 4004 — the wallet does not support / cannot find the requested method. */
+  METHOD_NOT_FOUND: 4004;
+  /** 4005 — the wallet does not own a required secret key. */
+  NO_SECRET_KEY: 4005;
+  /** 4029 — too many requests (rate limited). */
+  LIMIT_EXCEEDED: 4029;
+  /** 4900 — the wallet is disconnected / not connected. */
   DISCONNECTED: 4900;
 }
 
@@ -31,8 +39,8 @@ export interface ProviderError extends Error {
 /** Self-describing capability object exposed as `window.chia.info`. */
 export interface ProviderInfo {
   isDIG: true;
-  /** 'walletconnect' (extension brokers to Sage) | 'native' (in-process browser bridge). */
-  transport: 'walletconnect' | 'native' | (string & {});
+  /** 'injected' (extension serves via its self-custody vault) | 'native' (in-process browser bridge). */
+  transport: 'injected' | 'native' | (string & {});
   /** 'extension' | 'browser'. */
   edition: 'extension' | 'browser' | (string & {});
   providerVersion: number;
@@ -82,7 +90,8 @@ export interface ChiaProvider {
 
   request<T = unknown>(args: RequestArguments): Promise<T>;
 
-  connect(eager?: boolean): Promise<unknown>;
+  /** CHIP-0002/Goby connect — resolves `true` on success. `scope` requests least privilege. */
+  connect(params?: { eager?: boolean; scope?: 'full' | 'read-only' } | boolean): Promise<boolean>;
   walletSwitchChain(params: { chainId: ChainId }): Promise<null>;
   walletWatchAsset(params: unknown): Promise<unknown>;
   getPublicKeys(params?: unknown): Promise<Hex[]>;

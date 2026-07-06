@@ -10,9 +10,9 @@
  *   - PROVIDER_INFO         — self-describing capability object (isDIG/transport/edition)
  *   - WALLET_PROVIDER_VERSION + a `version` field
  *   - a method catalogue (window.chia.methods + a local chip0002_getMethods request)
- *   - PROVIDER_ERROR_CODES  — standard wallet error codes (4001/4100/4200/4900) replacing
- *     the old ad-hoc -1 / raw-HTTP-status sentinels, byte-aligned with the native DIG
- *     Browser provider (SYSTEM.md → keep the two providers in sync).
+ *   - PROVIDER_ERROR_CODES  — the CHIP-0002 wallet error codes (4000/4001/4002/4003/4004/4005/
+ *     4029 + 4900 disconnected) so a CHIP-0002/Goby dApp branches on err.code identically,
+ *     byte-aligned with the native DIG Browser provider (SYSTEM.md → keep the two providers in sync).
  *
  * Plain ES module (no DOM) so it runs under `node --test`.
  */
@@ -24,8 +24,8 @@ export const WALLET_PROVIDER_VERSION = 1;
 
 /**
  * The wallet's display name, exposed as `window.chia.name`. Goby dApps read this
- * (Goby returns "Goby", loroco "Loroco"); DIG identifies as "DIG". Kept identical
- * across the two injected providers.
+ * (Goby returns "Goby"); DIG identifies as "DIG". Kept identical across the two
+ * injected providers.
  */
 export const WALLET_PROVIDER_NAME = 'DIG';
 
@@ -40,45 +40,60 @@ export const WALLET_CHAIN_ID = 'mainnet';
 
 /**
  * Self-describing capability object exposed as `window.chia.info`. An agent feature-detects
- * the transport (WalletConnect-brokered in the extension vs in-process in the native
- * browser) and edition without out-of-band knowledge.
+ * the transport (`injected` — served in-extension by the self-custody vault — vs `native`
+ * in-process in the DIG Browser) and edition without out-of-band knowledge.
  * @readonly
  */
 export const PROVIDER_INFO = Object.freeze({
   isDIG: true,
-  /** 'walletconnect' (extension brokers to Sage) — the native browser reports 'in-process'. */
-  transport: 'walletconnect',
+  /** 'injected' — the provider is injected in-page and served by the extension's own
+   *  self-custody wallet (there is no WalletConnect); the native browser reports 'native'. */
+  transport: 'injected',
   /** 'extension' here; the native fork reports 'browser'. */
   edition: 'extension',
   providerVersion: WALLET_PROVIDER_VERSION,
 });
 
 /**
- * Standard wallet provider error codes (EIP-1193 / CHIP-0002 aligned). These replace the
- * previous ad-hoc scheme (a magic -1 for unreachable, a raw HTTP status for everything
- * else). Documented here AND in the README provider section so a dapp/agent can branch on
- * `err.code`. Kept identical to the native DIG Browser provider.
+ * Standard wallet provider error codes — the **CHIP-0002** set, so a dApp written for a
+ * CHIP-0002 / Goby wallet branches on `err.code` identically against this provider. These
+ * REPLACE the earlier ad-hoc scheme (4100/4200) with the CHIP-0002 numbers:
+ *   4000 invalid params · 4001 unauthorized · 4002 user-rejected · 4003 spendable-balance
+ *   exceeded · 4004 method-not-found · 4005 no-secret-key · 4029 rate-limited.
+ * `4900` (disconnected / not-connected) is kept — Goby dApps expect it from `accounts()` when
+ * the origin hasn't connected. Consumed byte-identically by the extension AND the native DIG
+ * Browser injected provider.
  * @readonly
  */
 export const PROVIDER_ERROR_CODES = Object.freeze({
-  /** 4001 — the user rejected the request (or a connect is still pending approval). */
-  USER_REJECTED: 4001,
-  /** 4100 — the origin/account is not authorized (call connect() first). */
-  UNAUTHORIZED: 4100,
-  /** 4200 — the wallet does not support the requested method. */
-  UNSUPPORTED_METHOD: 4200,
-  /** 4900 — the wallet is disconnected / unreachable (no Sage session, relay down). */
+  /** 4000 — invalid method params. */
+  INVALID_PARAMS: 4000,
+  /** 4001 — the origin/account is not authorized (call connect() first). */
+  UNAUTHORIZED: 4001,
+  /** 4002 — the user rejected the request (or a connect approval timed out). */
+  USER_REJECTED: 4002,
+  /** 4003 — the requested spend exceeds the spendable balance. */
+  SPENDABLE_BALANCE_EXCEEDED: 4003,
+  /** 4004 — the wallet does not support / cannot find the requested method. */
+  METHOD_NOT_FOUND: 4004,
+  /** 4005 — the wallet does not own a required secret key. */
+  NO_SECRET_KEY: 4005,
+  /** 4029 — too many requests (rate limited). */
+  LIMIT_EXCEEDED: 4029,
+  /** 4900 — the wallet is disconnected / not connected (Goby convention). */
   DISCONNECTED: 4900,
 });
 
 /**
  * Map a broker {status, body} envelope (or its absence) to a thrown Error carrying a
- * STANDARD provider error code. The mapping:
- *   - missing envelope / 5xx  → 4900 DISCONNECTED
- *   - 202 (pending approval)  → 4001 USER_REJECTED (with `.pending = true` so connect() polls)
- *   - 401 / 403               → 4100 UNAUTHORIZED
- *   - 404                     → 4200 UNSUPPORTED_METHOD
- *   - any other non-2xx       → 4001 USER_REJECTED (a wallet-side rejection)
+ * STANDARD CHIP-0002 provider error code. The mapping:
+ *   - missing envelope / 5xx / 0  → 4900 DISCONNECTED
+ *   - 202 (pending approval)      → 4002 USER_REJECTED (with `.pending = true` so connect() polls)
+ *   - 400                         → 4000 INVALID_PARAMS
+ *   - 401 / 403                   → 4001 UNAUTHORIZED
+ *   - 404                         → 4004 METHOD_NOT_FOUND
+ *   - 429                         → 4029 LIMIT_EXCEEDED
+ *   - any other non-2xx           → 4002 USER_REJECTED (a wallet-side rejection)
  *
  * @param {{status:number, body?:{error?:string}, error?:string}|null|undefined} env
  * @returns {Error & { code:number, pending?:boolean, status?:number }}
@@ -101,8 +116,10 @@ export function mapEnvelopeToError(env) {
     return e;
   }
   let code;
-  if (status === 401 || status === 403) code = PROVIDER_ERROR_CODES.UNAUTHORIZED;
-  else if (status === 404) code = PROVIDER_ERROR_CODES.UNSUPPORTED_METHOD;
+  if (status === 400) code = PROVIDER_ERROR_CODES.INVALID_PARAMS;
+  else if (status === 401 || status === 403) code = PROVIDER_ERROR_CODES.UNAUTHORIZED;
+  else if (status === 404) code = PROVIDER_ERROR_CODES.METHOD_NOT_FOUND;
+  else if (status === 429) code = PROVIDER_ERROR_CODES.LIMIT_EXCEEDED;
   else if (status >= 500 || status === 0) code = PROVIDER_ERROR_CODES.DISCONNECTED;
   else code = PROVIDER_ERROR_CODES.USER_REJECTED;
 
@@ -148,15 +165,25 @@ export function buildProvider({ bridgeCall, version, emit } = {}) {
     return (env.body || {}).data;
   }
 
-  async function connect(eager) {
+  // CHIP-0002 / Goby connect. Accepts the reference `{ eager?, scope?: 'full'|'read-only' }`
+  // options object (or a bare boolean `eager` from legacy internal callers) and RESOLVES A
+  // BOOLEAN (`true` on success) — the CHIP-0002/Goby contract. The connected address is cached
+  // (surfaced via `selectedAddress` / `accounts()`), and `accountChanged` fires with it.
+  async function connect(opts) {
+    const eager = typeof opts === 'boolean' ? opts : !!(opts && opts.eager);
+    const scope = opts && typeof opts === 'object' ? opts.scope : undefined;
     const deadline = Date.now() + 120000;
     for (;;) {
       try {
-        const r = await rpc('chip0002_connect', { eager: !!eager });
+        const params = { eager };
+        if (scope) params.scope = scope;
+        const r = await rpc('chip0002_connect', params);
         _connected = true;
         _chainId = WALLET_CHAIN_ID; // DIG is Chia mainnet
-        fire('connect', r);
-        return r;
+        if (r && typeof r === 'object' && r.address) _selectedAddress = r.address;
+        fire('connect', r); // superset: keep the legacy 'connect' event carrying the raw result
+        fire('accountChanged', _selectedAddress ? [_selectedAddress] : []);
+        return true;
       } catch (e) {
         if (e && e.pending && Date.now() < deadline) {
           await new Promise((res) => setTimeout(res, 1200));
@@ -202,13 +229,13 @@ export function buildProvider({ bridgeCall, version, emit } = {}) {
     const target = params && params.chainId;
     if (target === WALLET_CHAIN_ID || target == null) return Promise.resolve(null);
     const e = new Error('DIG wallet supports only Chia mainnet');
-    e.code = PROVIDER_ERROR_CODES.UNSUPPORTED_METHOD; // 4200
+    e.code = PROVIDER_ERROR_CODES.METHOD_NOT_FOUND; // 4004 — unsupported chain
     return Promise.reject(e);
   }
 
   const provider = {
     isDIG: true,
-    // Goby identity flags — a Goby/Sage dApp feature-detects these (see loroco parity).
+    // Goby identity flags — a Goby/Sage dApp feature-detects these (Reference Wallet B parity).
     isGoby: true,
     name: WALLET_PROVIDER_NAME,
     apiVersion: WALLET_API_VERSION,
@@ -230,7 +257,7 @@ export function buildProvider({ bridgeCall, version, emit } = {}) {
         return Promise.resolve(WALLET_METHODS);
       }
       if (method === 'connect' || method === 'chip0002_connect') {
-        return connect(params && params.eager);
+        return connect(params); // params: { eager?, scope? } (or undefined)
       }
       if (method === 'requestAccounts') return requestAccounts();
       if (method === 'accounts') return accounts();
