@@ -1,10 +1,10 @@
 name: publish-npm
 
-# Publish @dignetwork/chia-provider to npmjs. Auth uses the org-level NPM_TOKEN secret (must be
-# granted to this repo in the org secret's repository-access list) — the SAME pattern as
-# dig-sdk / chip35_dl_coin publish-npm.yml. Runs when a GitHub Release is published (tag-driven),
-# or on manual dispatch. The version published is whatever is in package.json on the released
-# commit — bump it before tagging.
+# Publish @dignetwork/chia-provider to npmjs. Auth uses npm Trusted Publishing (OIDC) — the
+# workflow requests a short-lived GitHub Actions OIDC token (permissions.id-token: write) which
+# npm exchanges for a provenance-attested publish; there is no NPM_TOKEN secret. Runs when a
+# GitHub Release is published (tag-driven), or on manual dispatch. The version published is
+# whatever is in package.json on the released commit — bump it before tagging.
 on:
   push:
     tags: ['v*']
@@ -19,6 +19,7 @@ concurrency:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   publish:
@@ -30,14 +31,17 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
-          node-version: 20
+          node-version: "22"
           cache: npm
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
       # Gate the publish on green tests + the ≥80% coverage floor (CLAUDE.md §2.3).
       - run: npm test
       - run: npm run coverage
+      # Trusted publishing requires npm CLI >= 11.5.1; Node 22 bundles npm 10.
+      - name: upgrade npm for trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
       - name: publish to npmjs
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
