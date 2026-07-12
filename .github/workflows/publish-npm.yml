@@ -5,6 +5,11 @@ name: publish-npm
 # npm exchanges for a provenance-attested publish; there is no NPM_TOKEN secret. Runs when a
 # GitHub Release is published (tag-driven), or on manual dispatch. The version published is
 # whatever is in package.json on the released commit — bump it before tagging.
+#
+# Does NOT re-run the test suite: the PR release gates (ci.yml) already ran tests + the coverage
+# floor against this exact merged tree before it was allowed to merge. Re-running tests here is
+# redundant and adds a pure flake-exposure surface at deploy time with no additional safety (#489,
+# following the pattern that blocked a release in #488). This job builds/packages/publishes only.
 on:
   push:
     tags: ['v*']
@@ -23,7 +28,7 @@ permissions:
 
 jobs:
   publish:
-    name: test + npm publish
+    name: npm publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -35,9 +40,6 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
       - run: npm ci
-      # Gate the publish on green tests + the ≥80% coverage floor (CLAUDE.md §2.3).
-      - run: npm test
-      - run: npm run coverage
       # Trusted publishing requires npm CLI >= 11.5.1; Node 22 bundles npm 10.
       - name: upgrade npm for trusted publishing
         run: |
