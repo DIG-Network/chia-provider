@@ -1,6 +1,6 @@
 {
   "name": "@dignetwork/chia-provider",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Canonical DIG window.chia wallet provider — a Goby/CHIP-0002/Sage-WC2-compatible injected provider surface, transport-injected, shared by the DIG Browser (in-process native bridge) and the dig-chrome-extension (WalletConnect→Sage). One contract, two consumers.",
   "type": "module",
   "license": "MIT",
